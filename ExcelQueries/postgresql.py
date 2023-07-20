@@ -35,6 +35,7 @@ class Agent:
         tables = cursor.fetchall()
         tables = [table[0] for table in tables]
         table_schema = []
+        samples = []
         for table in tables:
             cursor.execute(f"""
 SELECT
@@ -68,17 +69,20 @@ group by relname
 ;""")
             schema = cursor.fetchall()
             table_schema.append(schema)
+            cursor.execute(f"SELECT * FROM {table} LIMIT 1")
+            sample = cursor.fetchall()
+            samples.append(sample[0])
         prompt = ""
-        for t_s in table_schema:
-            prompt += t_s[0][0]
-        # for table, cols in zip(tables, table_schema):
-        #     prompt += f"Table {table} columns:\n"
-        #     for col in cols:
-        #         prompt += f"{col}\t"
-        #     prompt += "\n"
+        for t_s, s in zip(table_schema, samples):
+            prompt += "\n" + t_s[0][0] + "SAMPLE ROW:\n"
+            prompt += str(s)
         prompt += f"\nForiegn Keys:\n"
         cursor.execute(
-            "SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name, ccu.column_name AS foreign_column_name FROM information_schema.table_constraints AS tc JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name WHERE constraint_type = 'FOREIGN KEY';")
+            "SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name, ccu.column_name AS "
+            "foreign_column_name FROM information_schema.table_constraints AS tc JOIN "
+            "information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name JOIN "
+            "information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name WHERE "
+            "constraint_type = 'FOREIGN KEY';")
         fk_constraints = cursor.fetchall()
         for c in fk_constraints:
             prompt += f"Foreign Key in table {c[0]} in {c[1]} referencing table {c[2]} column {c[3]}\n"
@@ -102,7 +106,7 @@ Reply in the format:
         """
         db_info = self.get_db_info()
         query = input("Query:")
-        prompt = prompt.format(chat_history=[], query=query, db_info=db_info)
+        prompt = prompt.format(query=query, db_info=db_info)
         messages = [
             {
                 "role": "system", "content": prompt
