@@ -6,9 +6,7 @@ import json
 load_dotenv()
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
-
-
-# openai.organization = os.getenv("OPENAI_ORG")
+openai.organization = os.getenv("OPENAI_ORG")
 
 
 def query_openai_chat_completion(messages, functions=None, function_call="auto"):
@@ -69,6 +67,7 @@ Only use function_call to reply to use. Do not use content.
             },
         ]
         reply = query_openai_chat_completion(messages, functions, {"name": "reply_user"})
+        print(reply)
         try:
             if reply["function_call"]:
                 for tool in tools:

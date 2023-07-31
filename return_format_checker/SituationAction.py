@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
-# openai.organization = os.getenv("OPENAI_ORG")
+openai.organization = os.getenv("OPENAI_ORG")
 
 
 class SituationAction:
@@ -53,12 +53,14 @@ Return the action in the correct format.
     def run(self):
         prompt = self.get_action_prompt()
         print(prompt)
+        # 1.INTIAL ACTION
         messages = [{"role": "user",
                      "content": prompt}]
         completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages, temperature=0.7)
         reply = completion.choices[0].message.content
         print(reply)
         self.initial_action = reply
+        # 2.CHECK VALID ACTION
         prompt = self.valid_action_check()
         print(prompt)
         messages = [{"role": "user",
@@ -67,6 +69,7 @@ Return the action in the correct format.
         reply = completion.choices[0].message.content
         print(reply)
         self.validated_action = reply
+        # 3.FORMAT ACTION TO JSON
         prompt = self.get_action_format()
         print(prompt)
         messages = [{"role": "user",
@@ -77,6 +80,7 @@ Return the action in the correct format.
             res_json = json.loads(reply)
             print(res_json)
         except JSONDecodeError as e:
+            # 4.VERIFY FORMAT
             self.initial_format_validated_action = reply
             prompt = self.get_valid_format()
             print(prompt)
