@@ -1,14 +1,14 @@
 import os
 
+import PyPDF2
+import gensim
 import numpy as np
 import openai
 import redis
 from dotenv import load_dotenv
-from redis.commands.search.field import TagField, VectorField
+from redis.commands.search.field import TagField, VectorField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
-import PyPDF2
-import gensim
 
 from prompt import PromptGen
 
@@ -26,6 +26,7 @@ INDEX_NAME = "hyde"  # Vector Index Name
 DOC_PREFIX = "doc:"  # RediSearch Key Prefix for the Index
 
 last_id = -1
+
 
 class Embedding:
     def __init__(self, filename, query, generate_examples=False):
@@ -48,7 +49,7 @@ class Embedding:
                 text += reader.getPage(i).extractText()
         else:
             return ""
-        return text
+        return text, self.filename
 
     @staticmethod
     def embed_into_db(page_content, embeddings, tag):
@@ -57,7 +58,8 @@ class Embedding:
             # HSET
             pipe.hset(f"doc:{i}", mapping={
                 "vector": embedding,
-                "content": content,
+                "content": content[0],
+                "doc_name": content[1],
                 "tag": tag
             })
         pipe.execute()
@@ -77,9 +79,10 @@ class Embedding:
         knn_query = f"[KNN {k} @vector $vec AS score]"
         query = Query(tag_query + knn_query) \
             .sort_by('score', asc=False) \
-            .return_fields('id', 'score', 'content') \
+            .return_fields('id', 'score', 'content', 'doc_name') \
             .dialect(2)
         return query
+
 
 class Character(Embedding):
     def __init__(self, filename, char_count=1000, generate_examples=False):
@@ -87,7 +90,7 @@ class Character(Embedding):
         self.char_count = char_count
         self.chunk_and_embed()
 
-    def chunk(self, text):
+    def chunk(self, text, filename):
         page_content = []
         idx = 0
         s = ""
@@ -95,19 +98,19 @@ class Character(Embedding):
             s += ch
             idx += 1
             if idx >= self.char_count:
-                page_content.append(s)
+                page_content.append((s, filename))
                 s = ""
                 idx = 0
         return page_content
 
     def chunk_and_embed(self):
-        text = self._read()
-        page_content = self.chunk(text)
-        if self.generate_examples:
-            self.examples = self.generate_qa_examples(page_content)
+        text, filename = self._read()
+        page_content = self.chunk(text, filename)
+        # if self.generate_examples:
+        #     self.examples = self.generate_qa_examples(page_content)
         embeddings = []
         for content in page_content:
-            embedding = self.get_embedding(content.strip())
+            embedding = self.get_embedding(content[0].strip())
             embeddings.append(self.convert_embedding_to_structure(embedding))
         self.embed_into_db(page_content, embeddings, "hyde")
 
@@ -117,6 +120,7 @@ class Character(Embedding):
         query_params = {"vec": embedding}
         ret = r.ft(INDEX_NAME).search(query, query_params).docs
         return ret
+
 
 def create_index(vector_dimensions: int):
     try:
@@ -134,6 +138,7 @@ def create_index(vector_dimensions: int):
                         "DISTANCE_METRIC": "COSINE",  # Vector Search Distance Metric
                     }
                     ),
+        TextField("doc_name")
     )
 
     # index Definition
@@ -142,51 +147,14 @@ def create_index(vector_dimensions: int):
     # create Index
     r.ft(INDEX_NAME).create_index(fields=schema, definition=definition)
 
-#
-# def add_docs(document):
-#     global last_id
-#     last_id += 1
-#     pipe = r.pipeline()
-#     vec = embed(document).tobytes()
-#     # HSET
-#     pipe.hset(f"doc:{last_id}", mapping={
-#         "vector": vec,
-#         "content": document,
-#         "tag": 'hyde'
-#     })
-#     pipe.execute()
-#
-#
-# def retrieve(query_vector, k=1):
-#     tag_query = "(@tag:{ hyde })=>"
-#     knn_query = f"[KNN {k} @vector $vec AS score]"
-#     redis_query = Query(tag_query + knn_query) \
-#         .sort_by('score', asc=False) \
-#         .return_fields('id', 'score', 'content') \
-#         .dialect(2)
-#     vec = query_vector
-#     query_params = {"vec": vec}
-#     ret = r.ft(INDEX_NAME).search(redis_query, query_params).docs
-#     return ret
-#
-#
-# def embed(document):
-#     embeddings = openai.Embedding.create(input=document.strip(), model="text-embedding-ada-002")["data"][0]["embedding"]
-#     embeddings = np.array(embeddings, dtype=np.float32).reshape(1, -1)
-#     return embeddings
-
 
 class Agent:
-    def __init__(self, query, upload=False, filename=None):
+    def __init__(self, query, filename):
         create_index(1536)
         self.query = prompt_gen.WEB_SEARCH.format(query)
-        if not upload:
-            self.filename = None
-        else:
-            self.filename = filename
+        self.filename = filename
 
     def run(self):
-        c = Character("")
         print(self.query)
         result = openai.Completion.create(
             engine="text-davinci-003",
@@ -226,9 +194,12 @@ class Agent:
         print(query_response)
         print(">Retrieved documents:")
         for res in query_response:
-            print(res.content.strip())
+            print(res)
 
 
 if __name__ == "__main__":
-    a = Agent("Provisioning norms in respect of all cases of fraud", upload=True, filename="data/data.pdf")
+    a = Agent(
+        query="Provisioning norms in respect of all cases of fraud",
+        filename="data/data.pdf"
+    )
     a.run()
