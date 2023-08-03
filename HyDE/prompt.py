@@ -46,3 +46,9 @@ Please write a passage in {} to answer the question in detail.
 Question: {}
 Passage:
     """
+
+    SUMMARY = """
+Please write a summary to answer the question in detail.
+Question: {}
+Passage:
+    """

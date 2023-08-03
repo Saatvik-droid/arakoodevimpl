@@ -28,6 +28,16 @@ DOC_PREFIX = "doc:"  # RediSearch Key Prefix for the Index
 last_id = -1
 
 
+def query_openai_chat_completion(messages, functions=None, function_call="auto"):
+    if functions is None:
+        completion = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613", messages=messages, temperature=0.7)
+    else:
+        completion = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613", messages=messages, temperature=0.7,
+                                                  functions=functions, function_call=function_call)
+    reply = completion.choices[0].message
+    return reply
+
+
 class Embedding:
     def __init__(self, filename, query, generate_examples=False):
         create_index(300)
@@ -98,7 +108,7 @@ class Character(Embedding):
             s += ch
             idx += 1
             if idx >= self.char_count:
-                page_content.append((s, filename))
+                page_content.append([s, filename])
                 s = ""
                 idx = 0
         return page_content
@@ -110,9 +120,27 @@ class Character(Embedding):
         #     self.examples = self.generate_qa_examples(page_content)
         embeddings = []
         for content in page_content:
-            embedding = self.get_embedding(content[0].strip())
+            summary = self.summarize(content[0])
+            embedding = self.get_embedding(summary.strip())
+            # embedding = self.get_embedding(content[0].strip())
             embeddings.append(self.convert_embedding_to_structure(embedding))
         self.embed_into_db(page_content, embeddings, "hyde")
+
+    @staticmethod
+    def summarize(chunk):
+        messages = [
+            {
+                "role": "user",
+                "content": f"""
+Summarize the following text to replace the original text with all important information left as it is:
+{chunk}
+Summary:
+                """
+            }
+        ]
+        res = query_openai_chat_completion(messages).content
+        print(res)
+        return res
 
     def knn_doc_query_db(self, query_vec, k=10):
         query = self.format_query("hyde", k)
@@ -151,7 +179,7 @@ def create_index(vector_dimensions: int):
 class Agent:
     def __init__(self, query, filename):
         create_index(1536)
-        self.query = prompt_gen.WEB_SEARCH.format(query)
+        self.query = prompt_gen.SUMMARY.format(query)
         self.filename = filename
 
     def run(self):
@@ -191,15 +219,15 @@ class Agent:
         result_vector = mean_embedding.tobytes()
 
         query_response = c.knn_doc_query_db(result_vector, 2)
-        print(query_response)
         print(">Retrieved documents:")
         for res in query_response:
-            print(res)
+            print(res.id, res.doc_name, res.score)
+            print(res.content)
 
 
 if __name__ == "__main__":
     a = Agent(
-        query="Provisioning norms in respect of all cases of fraud",
+        query="Out of order accounts",
         filename="data/data.pdf"
     )
     a.run()
