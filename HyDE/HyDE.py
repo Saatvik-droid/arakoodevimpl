@@ -95,22 +95,15 @@ class Embedding:
 
 
 class Character(Embedding):
-    def __init__(self, filename, char_count=1000, generate_examples=False):
+    def __init__(self, filename, char_count=1000, overlap=0, generate_examples=False):
         super().__init__(filename, self.knn_doc_query_db, generate_examples)
         self.char_count = char_count
+        self.overlap = overlap
         self.chunk_and_embed()
 
     def chunk(self, text, filename):
-        page_content = []
-        idx = 0
-        s = ""
-        for ch in text:
-            s += ch
-            idx += 1
-            if idx >= self.char_count:
-                page_content.append([s, filename])
-                s = ""
-                idx = 0
+        page_content = [[text[i: i + self.char_count], filename] for i in
+                        range(5000, 30000, self.char_count - self.overlap)]
         return page_content
 
     def chunk_and_embed(self):
@@ -204,7 +197,7 @@ class Agent:
         texts = [r[0] for r in sorted(to_return, key=lambda tup: tup[1], reverse=True)]
 
         if self.filename:
-            c = Character(self.filename, 800)
+            c = Character(self.filename, 800, 50)
 
         print(">Generated responses:")
         text_embeddings = []
@@ -227,7 +220,7 @@ class Agent:
 
 if __name__ == "__main__":
     a = Agent(
-        query="Out of order accounts",
+        query="interest on NPA",
         filename="data/data.pdf"
     )
     a.run()
