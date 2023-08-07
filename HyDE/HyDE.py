@@ -263,7 +263,7 @@ Below are several numbered sources of information:
 
 if __name__ == "__main__":
     a = Agent(
-        query="What is RE",
+        query="What is APR",
         filename="data/GUIDELINES.pdf"
     )
     a.run()
