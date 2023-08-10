@@ -1,3 +1,4 @@
+import json
 import os
 
 import openai
@@ -20,51 +21,89 @@ def query_openai_chat_completion(messages, functions=None, function_call="auto")
 
 
 class Agent:
+    def __init__(self, query):
+        self.query = query
+
     @staticmethod
     def exec_python(code):
-        print(eval(code))
+        return eval(code)
 
     def run(self):
         example = """
 You are a Reasoning + Acting (React) Chain Bot. You have to be interactive so ask the queries one by one from the user to reach to the final answer. Please provide a single Thought and single Action to the user so that the user can search the query of the action and provide you with the observation. 
 The tools you have access to are:
-1.Search
-2.CodeInterpreter
+1. CodeInterpreter
+2. Finish
 Do not perform mathematical or code operations yourself, rather use CodeInterpreter. 
-When you have found the answer to the original prompt then the final response should be Action: Finish[Answer to the original prompt].
-
+If you have the answer use Finish tool to end the thought process.
 For example the chain would be like this:
 
 Question: What is value of pi divided by 2
-Thought 1: I need to search the value of pi.
-Action 1: Search[Value of pi]
-Observation 1: Value of pi is approximately 3.141
-Thought 2: I need to divide the value of pi by 2.
-Action 2: CodeInterpreter[3.141/2]
-Observation 2: CodeInterpreter returned 15.705
-Thought 3: We have obtained the value of pi divided by 2.
-Action 3: Finish[15.705]
+{
+    thought: I need to search the value of pi,
+    action: {
+        tool: Search
+        arg: Value of pi
+    }
+}
+observation: Value of pi is approximately 3.141
+{
+    thought: I need to divide the value of pi by 2.
+    action: {
+        tool: CodeInterpreter,
+        arg: 3.141/2
+    }
+}
+observation: CodeInterpreter returned 15.705
+{
+    thought: We have obtained the value of pi divided by 2.
+    action: {
+        tool: Finish
+        arg: 15.705
+    }
+}
+        """
+        extracted = """
+Question:{query}
+
+EXTRACTED = {json_format}
+Return EXTRACTED as a valid JSON object.
+        """
+        schema = """
+{
+    thought:: string,
+    action: {
+        tool: string,
+        arg: string
+    }
+}
         """
         print(example)
-        messages = [
-            {
-                "role": "system",
-                "content": example
-            },
-            {
-                "role": "user",
-                "content": "What is 10 divided by 2"
-            }
-        ]
-        reply = query_openai_chat_completion(messages).content
-        print(reply)
-        action = reply.split("\n")[1]
-        tool = action[action.find(":")+1:].strip()
-        print(tool)
-        if "CodeInterpreter" in tool:
-            self.exec_python(tool[tool.find("[")+1:tool.find("]")])
+        while True:
+            extracted_f = extracted.format(query=self.query, json_format=schema)
+            print(extracted_f)
+            messages = [
+                {
+                    "role": "system",
+                    "content": example
+                },
+                {
+                    "role": "user",
+                    "content": extracted_f
+                }
+            ]
+            reply = query_openai_chat_completion(messages).content
+            reply_json = json.loads(reply)
+            print(f"RESPONSE:\n{reply}")
+            if reply_json["action"]["tool"] == "CodeInterpreter":
+                val = self.exec_python(reply_json["action"]["arg"])
+                print(val)
+                self.query += f"\n{reply}\nObservation: CodeInterpreter returned {val}"
+            if reply_json["action"]["tool"] == "Finish":
+                print(f'FINAL ANSWER:\n{reply_json["action"]["arg"]}"')
+                break
 
 
 if __name__ == "__main__":
-    a = Agent()
+    a = Agent("What is 10 exponential 2")
     a.run()
